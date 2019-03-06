@@ -3,6 +3,7 @@
 #endif
 
 #include <fcntl.h>
+#include <stdbool.h>
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,9 +79,9 @@ int main(int argc, char *argv[]){
     memset(&sendbuffer,0,BUFFLEN);
     u_long nonblocking_enabled = TRUE;
     ioctlsocket(s_socket, FIONBIO, &nonblocking_enabled );
-   // GetFileInformationByHandle(0, lpFileInformation);
-    //fcntl(0,F_SETFL,fcntl(0,F_GETFL,0)|O_NONBLOCK);
-    while (sendbuffer[0] !='e' && sendbuffer[1] != 'x'){
+    bool running = true;
+
+    while (running){
         FD_ZERO(&read_set);
         FD_SET(s_socket,&read_set);
         FD_SET(0,&read_set);
@@ -91,7 +92,12 @@ int main(int argc, char *argv[]){
              * Išsiunčiamas pranešimas serveriui
          */
         send(s_socket,sendbuffer,strlen(sendbuffer),0);
-
+        printf("nu %s", sendbuffer);
+        if(sendbuffer[0] == '/' && sendbuffer[1] == 'x')
+        {
+            running = false;
+            close(s_socket);
+        }
         memset(&sendbuffer,0,BUFFLEN);
         /*
         * Pranešimas gaunamas iš serverio
@@ -105,13 +111,9 @@ int main(int argc, char *argv[]){
             i = read(0,&sendbuffer,1);
             write(s_socket, sendbuffer,i);
         }
+
             recv(s_socket,recvbuffer,BUFFLEN,0);
             printf("Server sent: %s\n", recvbuffer);
-
-            /*
-             * Socket'as uždaromas
-             */close(s_socket);
-        //}
 
     }
 
