@@ -1,139 +1,139 @@
 #ifdef _WIN32
 #include <winsock2.h>
-#define socklen_t int
-#else
 #endif
 
-#include <stdlib.h>
-#include <stdio.h>
+#include <fcntl.h>
+#include <stdbool.h>
 #include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <stdbool.h>
-
+#include <ws2tcpip.h>
 
 #define BUFFLEN 1024
-#define MAXCLIENTS 10
-
-int findemptyuser(int c_sockets[]){
-    int i;
-    for (i = 0; i <  MAXCLIENTS; i++){
-        if (c_sockets[i] == -1){
-            return i;
-        }
-    }
-    return -1;
-}
+#include <sys/stat.h>
 
 int main(int argc, char *argv[]){
 #ifdef _WIN32
     WSADATA data;
 #endif
+
     unsigned int port;
-    unsigned int clientaddrlen;
-    int l_socket;
-    int c_sockets[MAXCLIENTS];
+    int s_socket;
+    struct sockaddr_in servaddr; // Serverio adreso struktūra
     fd_set read_set;
 
-    struct sockaddr_in servaddr;
-    struct sockaddr_in clientaddr;
+    char recvbuffer[BUFFLEN];
+    char sendbuffer[BUFFLEN];
 
-    int maxfd = 0;
     int i;
 
-    char buffer[BUFFLEN];
-
-    if (argc != 2){
-        fprintf(stderr, "USAGE: %s <port>\n", argv[0]);
-        return -1;
+    if (argc != 3){
+        fprintf(stderr,"USAGE: %s <ip> <port>\n",argv[0]);
+        exit(1);
     }
 
+    port = atoi(argv[2]);
+
+    if ((port < 1) || (port > 65535)){
+        printf("ERROR #1: invalid port specified.\n");
+        exit(1);
+    }
+
+    /*
+     * Sukuriamas socket'as
+     */
 #ifdef _WIN32
     WSAStartup(MAKEWORD(2,2),&data);
 #endif
 
-    port = atoi(argv[1]);
-    if ((port < 1) || (port > 65535)){
-        fprintf(stderr, "ERROR #1: invalid port specified.\n");
-        return -1;
+    if ((s_socket = socket(AF_INET, SOCK_STREAM,0))< 0){
+        fprintf(stderr,"ERROR #2: cannot create socket.\n");
+        exit(1);
     }
 
-    if ((l_socket = socket(AF_INET, SOCK_STREAM,0)) < 0){
-        fprintf(stderr, "ERROR #2: cannot create listening socket.\n");
-        return -1;
+    /*
+     * Išvaloma ir užpildoma serverio struktūra
+     */
+    memset(&servaddr,0,sizeof(servaddr));
+    servaddr.sin_family = AF_INET; // nurodomas protokolas (IP)
+    servaddr.sin_port = htons(port); // nurodomas portas
+
+#ifdef _WIN32
+    servaddr.sin_addr.s_addr = inet_addr(argv[1]);
+#else
+    if ( inet_aton(argv[1], &servaddr.sin_addr) <= 0 ) {
+        fprintf(stderr,"ERROR #3: Invalid remote IP address.\n");
+        exit(1);
+    }
+#endif
+
+
+    /*
+     * Prisijungiama prie serverio
+     */
+    if (connect(s_socket,(struct sockaddr*)&servaddr,sizeof(servaddr))<0){
+        fprintf(stderr,"ERROR #4: error in connect().\n");
+        exit(1);
     }
 
-    memset(&servaddr,0, sizeof(servaddr));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servaddr.sin_port = htons(port);
-
-    if (bind (l_socket, (struct sockaddr *)&servaddr,sizeof(servaddr))<0){
-        fprintf(stderr,"ERROR #3: bind listening socket.\n");
-        return -1;
-    }
-
-    if (listen(l_socket, 5) <0){
-        fprintf(stderr,"ERROR #4: error in listen().\n");
-        return -1;
-    }
-
-    for (i = 0; i < MAXCLIENTS; i++){
-        c_sockets[i] = -1;
-    }
-
-    FD_ZERO(&read_set);
+    memset(&sendbuffer,0,BUFFLEN);
+    u_long nonblocking_enabled = TRUE;
+    ioctlsocket(s_socket, FIONBIO, &nonblocking_enabled );
     bool running = true;
+
     while (running){
+        read(s_socket, &recvbuffer, 1);
 
-        for (i = 0; i < MAXCLIENTS; i++){
-            if (c_sockets[i] != -1){
-                FD_SET(c_sockets[i], &read_set);
-                if (c_sockets[i] > maxfd){
-                    maxfd = c_sockets[i];
-                }
-            }
+        FD_ZERO(&read_set);
+        FD_SET(s_socket,&read_set);
+        FD_SET(0,&read_set);
+        select(s_socket+1,&read_set,NULL,NULL,NULL);
+
+        if (FD_ISSET(s_socket, &read_set)){
+            memset(&recvbuffer,0,BUFFLEN);
+            read(s_socket, &recvbuffer, 1);
+            recv(s_socket,recvbuffer,BUFFLEN,0);
+            printf("kas cia:%s\n",recvbuffer);
+        }
+        else if (FD_ISSET(0,&read_set)) {
+            i = read(0,&sendbuffer,1);
+            write(s_socket, sendbuffer,i);
         }
 
-        FD_SET(l_socket, &read_set);
-        if (l_socket > maxfd){
-            maxfd = l_socket;
+        recv(s_socket,recvbuffer,BUFFLEN,0);
+        printf("Server sent: %s\n", recvbuffer);
+        printf("Your move: ");
+
+        fgets(sendbuffer, BUFFLEN, stdin);
+        send(s_socket,sendbuffer,strlen(sendbuffer),0);
+        if(sendbuffer[0] == '/' && sendbuffer[1] == 'x')
+        {
+            running = false;
+            close(s_socket);
+        }
+        memset(&sendbuffer,0,BUFFLEN);
+
+        /*
+        * Pranešimas gaunamas iš serverio
+        */
+        if (FD_ISSET(s_socket, &read_set)){
+            memset(&recvbuffer,0,BUFFLEN);
+            read(s_socket, &recvbuffer, BUFFLEN);
+            printf("%s\n",recvbuffer);
+        }
+        else if (FD_ISSET(0,&read_set)) {
+            i = read(0,&sendbuffer,1);
+            write(s_socket, sendbuffer,i);
         }
 
-        select(maxfd+1, &read_set, NULL , NULL, NULL);
+        recv(s_socket,recvbuffer,BUFFLEN,0);
+        printf("Server sent: %s\n", recvbuffer);
 
-        if (FD_ISSET(l_socket, &read_set)){
-            int client_id = findemptyuser(c_sockets);
-            if (client_id != -1){
-                clientaddrlen = sizeof(clientaddr);
-                memset(&clientaddr, 0, clientaddrlen);
-                c_sockets[client_id] = accept(l_socket,
-                                              (struct sockaddr*)&clientaddr, &clientaddrlen);
-                printf("Connected:  %s\n",inet_ntoa(clientaddr.sin_addr));
-            }
-        }
-        for (i = 0; i < MAXCLIENTS; i++){
-            if (c_sockets[i] != -1){
-                if (FD_ISSET(c_sockets[i], &read_set)){
-                    memset(&buffer,0,BUFFLEN);
-                    int r_len = recv(c_sockets[i],buffer,BUFFLEN,0);
-                    printf("Client sent: %s\n", buffer);
-
-                    int j;
-                    for (j = 0; j < MAXCLIENTS; j++){
-                        if (c_sockets[j] != -1){
-                            int w_len = send(c_sockets[j], buffer, r_len,0);
-                            printf("server sent: %s\n", buffer);
-                            if (w_len <= 0){
-                                close(c_sockets[j]);
-                                c_sockets[j] = -1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
+
+//
 
     return 0;
 }

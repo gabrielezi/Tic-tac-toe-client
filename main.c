@@ -75,6 +75,21 @@ int main(int argc, char *argv[]){
     if (connect(s_socket,(struct sockaddr*)&servaddr,sizeof(servaddr))<0){
         fprintf(stderr,"ERROR #4: error in connect().\n");
         exit(1);
+
+    }
+    else {
+        if(recv(s_socket,recvbuffer,BUFFLEN,0))
+        {
+            printf("You are: %s\n", recvbuffer);
+
+
+            if(recvbuffer[0] == '2')
+            {
+                memset(&recvbuffer,0,BUFFLEN);
+                recv(s_socket,recvbuffer,BUFFLEN,0);
+                printf("Opponent's move: %s\n", recvbuffer);
+            }
+        }
     }
     memset(&sendbuffer,0,BUFFLEN);
     u_long nonblocking_enabled = TRUE;
@@ -85,14 +100,14 @@ int main(int argc, char *argv[]){
         FD_ZERO(&read_set);
         FD_SET(s_socket,&read_set);
         FD_SET(0,&read_set);
+
         select(s_socket+1,&read_set,NULL,NULL,NULL);
-        printf("Enter the message: ");
+        printf("Your move: ");
         fgets(sendbuffer, BUFFLEN, stdin);
-         /*
-             * Išsiunčiamas pranešimas serveriui
-         */
+        /*
+            * Išsiunčiamas pranešimas serveriui
+        */
         send(s_socket,sendbuffer,strlen(sendbuffer),0);
-        printf("nu %s", sendbuffer);
         if(sendbuffer[0] == '/' && sendbuffer[1] == 'x')
         {
             running = false;
@@ -112,8 +127,8 @@ int main(int argc, char *argv[]){
             write(s_socket, sendbuffer,i);
         }
 
-            recv(s_socket,recvbuffer,BUFFLEN,0);
-            printf("Server sent: %s\n", recvbuffer);
+        recv(s_socket,recvbuffer,BUFFLEN,0);
+        printf("Server sent: %s\n", recvbuffer);
 
     }
 
