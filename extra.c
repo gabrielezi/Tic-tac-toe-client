@@ -10,7 +10,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <ws2tcpip.h>
-
 #define BUFFLEN 1024
 #include <sys/stat.h>
 
@@ -21,6 +20,7 @@ int main(int argc, char *argv[]){
 
     unsigned int port;
     int s_socket;
+    int o_socket; //oponento;
     struct sockaddr_in servaddr; // Serverio adreso struktūra
     fd_set read_set;
 
@@ -28,6 +28,7 @@ int main(int argc, char *argv[]){
     char sendbuffer[BUFFLEN];
 
     int i;
+    int client_id = -1;
 
     if (argc != 3){
         fprintf(stderr,"USAGE: %s <ip> <port>\n",argv[0]);
@@ -68,45 +69,58 @@ int main(int argc, char *argv[]){
         exit(1);
     }
 #endif
-
-
     /*
      * Prisijungiama prie serverio
      */
     if (connect(s_socket,(struct sockaddr*)&servaddr,sizeof(servaddr))<0){
         fprintf(stderr,"ERROR #4: error in connect().\n");
         exit(1);
-    }
 
+    }
+    else {
+        if(recv(s_socket,recvbuffer,BUFFLEN,0))
+        {
+            printf("You are: %s\n", recvbuffer);
+            client_id= 1;
+            if(recvbuffer[0] == '2')
+            {
+                client_id = 2;
+                memset(&recvbuffer,0,BUFFLEN);
+                recv(s_socket,recvbuffer,BUFFLEN,0);
+                printf("Opponent's move: %s\n", recvbuffer);
+            }
+            memset(&recvbuffer,0,BUFFLEN);
+        }
+        if(client_id == 1 ) {
+            o_socket = recv(s_socket,recvbuffer,BUFFLEN,0);
+            printf("kito socketas: %s\n", o_socket);
+        }
+
+    }
     memset(&sendbuffer,0,BUFFLEN);
     u_long nonblocking_enabled = TRUE;
     ioctlsocket(s_socket, FIONBIO, &nonblocking_enabled );
     bool running = true;
 
     while (running){
-        read(s_socket, &recvbuffer, 1);
-
         FD_ZERO(&read_set);
         FD_SET(s_socket,&read_set);
         FD_SET(0,&read_set);
+
         select(s_socket+1,&read_set,NULL,NULL,NULL);
+        if(client_id == 1)
+        {
 
-        if (FD_ISSET(s_socket, &read_set)){
-            memset(&recvbuffer,0,BUFFLEN);
-            read(s_socket, &recvbuffer, 1);
-            recv(s_socket,recvbuffer,BUFFLEN,0);
-            printf("kas cia:%s\n",recvbuffer);
         }
-        else if (FD_ISSET(0,&read_set)) {
-            i = read(0,&sendbuffer,1);
-            write(s_socket, sendbuffer,i);
-        }
+        if(client_id == 2)
+        {
 
-        recv(s_socket,recvbuffer,BUFFLEN,0);
-        printf("Server sent: %s\n", recvbuffer);
+        }
         printf("Your move: ");
-
         fgets(sendbuffer, BUFFLEN, stdin);
+        /*
+            * Išsiunčiamas pranešimas serveriui
+        */
         send(s_socket,sendbuffer,strlen(sendbuffer),0);
         if(sendbuffer[0] == '/' && sendbuffer[1] == 'x')
         {
@@ -114,7 +128,6 @@ int main(int argc, char *argv[]){
             close(s_socket);
         }
         memset(&sendbuffer,0,BUFFLEN);
-
         /*
         * Pranešimas gaunamas iš serverio
         */
